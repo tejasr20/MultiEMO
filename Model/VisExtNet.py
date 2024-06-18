@@ -5,7 +5,7 @@ from torchvision.io import read_video
 from Resnet101 import ResNet101
 
 
-
+#no change for modality support 
 
 '''
 VisExtNet is made up of a MTCNN and a VGGFace2-pretrained ResNet101. Firstly, MTCNN identifies the faces of interlocutors

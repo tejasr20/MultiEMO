@@ -19,6 +19,8 @@ class BidirectionalCrossAttention(nn.Module):
     
 
     def bidirectional_scaled_dot_product_attention(self, Q, K, V):
+        # torch.bmm(input, mat2, *, out=None) → Tensor
+        # Performs a batch matrix-matrix product of matrices stored in input and mat2.
         score = torch.bmm(Q, K.transpose(-1, -2))
         scaled_score = score / (K.shape[-1]**0.5)
         attention = torch.bmm(F.softmax(scaled_score, dim = -1), V)
@@ -80,6 +82,9 @@ class Feedforward(nn.Module):
 
 '''
 Residual connection to smooth the learning process.
+The AddNorm class adds residual connections to the model to help with the learning process. 
+It normalizes the input and adds dropout for regularization. This class is used to ensure 
+that the network can learn effectively without issues like vanishing gradients.
 '''
 class AddNorm(nn.Module):
 
@@ -108,6 +113,7 @@ MultiAttn is made up of three sub-components:
 class MultiAttnLayer(nn.Module):
 
     def __init__(self, num_heads, model_dim, hidden_dim, dropout_rate):
+        # the model architecture is independent of the modalities/features, only on dimensions. 
         super().__init__()
 
         Q_dim = K_dim = V_dim = model_dim // num_heads
@@ -118,16 +124,21 @@ class MultiAttnLayer(nn.Module):
         self.ff = Feedforward(model_dim, hidden_dim, dropout_rate)
         self.add_norm_3 = AddNorm(model_dim, dropout_rate)
 
-
-    def forward(self, query_modality, modality_A, modality_B):
+    def forward(self, query_modality, modality_A, modality_B, flag):
+        # make sure the forward call is so that modality A is not None and modality_B is None when only two modalities. 
+        # change
+        # this is the function that is called for multiattention
+        # when we have only two modalities, only the first must be done.
         attn_output_1 = self.add_norm_1(query_modality, lambda query_modality: self.attn_1(query_modality, modality_A, modality_A))
-        attn_output_2 = self.add_norm_2(attn_output_1, lambda attn_output_1: self.attn_2(attn_output_1, modality_B, modality_B))
+        if(flag):
+            attn_output_2 = self.add_norm_2(attn_output_1, lambda attn_output_1: self.attn_2(attn_output_1, modality_B, modality_B))
+        else: # only two modalities. 
+             attn_output_2 = self.add_norm_2(attn_output_1, lambda attn_output_1: self.attn_2(attn_output_1, modality_A, modality_A))
+            # ff_output = self.add_norm_2(attn_output_1, self.ff)
         ff_output = self.add_norm_3(attn_output_2, self.ff)
-
         return ff_output
 
-
-
+#  output = self.layer_norm(x + self.dropout(sublayer(x)))
 '''
 Stacks of MultiAttn layers.
 '''
@@ -140,27 +151,38 @@ class MultiAttn(nn.Module):
             MultiAttnLayer(num_heads, model_dim, hidden_dim, dropout_rate) for _ in range(num_layers)])
 
 
-    def forward(self, query_modality, modality_A, modality_B):
+    def forward(self, query_modality, modality_A, modality_B, flag):
         for multiattn_layer in self.multiattn_layers:
-            query_modality = multiattn_layer(query_modality, modality_A, modality_B)
+            query_modality = multiattn_layer(query_modality, modality_A, modality_B, flag)
         
         return query_modality
 
-
-
 class MultiAttnModel(nn.Module):
 
-    def __init__(self, num_layers, model_dim, num_heads, hidden_dim, dropout_rate):
+    def __init__(self, num_layers, model_dim, num_heads, hidden_dim, dropout_rate, modalities):
         super().__init__()
 
         self.multiattn_text = MultiAttn(num_layers, model_dim, num_heads, hidden_dim, dropout_rate)
         self.multiattn_audio = MultiAttn(num_layers, model_dim, num_heads, hidden_dim, dropout_rate)
         self.multiattn_visual = MultiAttn(num_layers, model_dim, num_heads, hidden_dim, dropout_rate)
-
+        self.modalities= modalities
     
     def forward(self, text_features, audio_features, visual_features):
-        f_t = self.multiattn_text(text_features, audio_features, visual_features)
-        f_a = self.multiattn_audio(audio_features, text_features, visual_features)
-        f_v = self.multiattn_visual(visual_features, text_features, audio_features)
-
+        f_a= f_t= f_v= None
+        if self.modalities == "atv": 
+             f_t = self.multiattn_text(text_features, audio_features, visual_features, 1)
+             f_a = self.multiattn_audio(audio_features, text_features, visual_features, 1)
+             f_v = self.multiattn_visual(visual_features, text_features, audio_features, 1)
+        elif self.modalities == "at":
+            f_t = self.multiattn_text(text_features, audio_features, visual_features, 0)
+            f_a = self.multiattn_audio(audio_features, text_features, visual_features, 0)
+        elif self.modalities == "tv":
+            f_t = self.multiattn_text(text_features, visual_features, audio_features, 0)
+            f_v = self.multiattn_visual(visual_features, text_features, audio_features, 0)
+        elif self.modalities == "av":
+            f_a = self.multiattn_audio(audio_features, visual_features, text_features, 0)
+            f_v = self.multiattn_visual(visual_features, audio_features, text_features, 0)
         return f_t, f_a, f_v
+    
+    
+    

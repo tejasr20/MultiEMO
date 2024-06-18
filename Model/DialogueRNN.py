@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_sequence
 
 
-
+#no change for modality support 
 
 class SimpleAttention(nn.Module):
 

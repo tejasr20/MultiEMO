@@ -36,9 +36,16 @@ class SoftHGRLoss(nn.Module):
 
 
     def forward(self, f_t, f_a, f_v):
-        self.num_samples = f_t.shape[0]
-
-        all_features = [f_t, f_a, f_v]
+        all_features_untrimmed= [f_t, f_a, f_v]
+        all_features= []
+        flag= 1
+        for features in all_features_untrimmed:
+            if(features is not None):
+                if(flag):
+                    self.num_samples = features.shape[0]
+                all_features.append(features)
+        # all_features = [f_t, f_a, f_v]
+        # this needs atleast two modalities to make sense. So this loss is removed when singular modality is used. 
         total_loss = 0.0
         for i in range(len(all_features) - 1):
             for j in range(i + 1, len(all_features)):

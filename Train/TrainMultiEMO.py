@@ -27,7 +27,7 @@ class TrainMultiEMO():
     def __init__(self, dataset, batch_size, num_epochs, learning_rate, weight_decay, 
                  num_layers, model_dim, num_heads, hidden_dim, dropout_rate, dropout_rec,
                  temp_param, focus_param, sample_weight_param, SWFC_loss_param, 
-                 HGR_loss_param, CE_loss_param, multi_attn_flag, device):
+                 HGR_loss_param, CE_loss_param, multi_attn_flag, device, modalities):
         self.dataset = dataset
         self.batch_size = batch_size
         self.num_epochs = num_epochs
@@ -47,6 +47,7 @@ class TrainMultiEMO():
         self.CE_loss_param = CE_loss_param
         self.multi_attn_flag = multi_attn_flag
         self.device = device
+        self.modalities= modalities # adding modality support. 
 
         self.best_test_f1 = 0.0
         self.best_epoch = 1
@@ -103,6 +104,7 @@ class TrainMultiEMO():
             self.num_classes = 7
             self.n_speakers = 9
 
+        # atv dimensions here. 
         roberta_dim = 768
         D_m_audio = 512
         D_m_visual = 1000
@@ -121,7 +123,7 @@ class TrainMultiEMO():
         self.model = MultiEMO(self.dataset, self.multi_attn_flag, roberta_dim, hidden_dim, dropout_rate, num_layers, 
                                     self.model_dim, num_heads, D_m_audio, D_m_visual, D_g, D_p, D_e, 
                                     D_h, self.num_classes, self.n_speakers, 
-                                    listener_state, context_attention, D_a, self.dropout_rec, self.device).to(self.device)
+                                    listener_state, context_attention, D_a, self.dropout_rec, self.device, self.modalities).to(self.device)
 
     def get_loss(self):
         class_counts = self.get_class_counts()
@@ -163,8 +165,9 @@ class TrainMultiEMO():
             loss = soft_HGR_loss * self.HGR_loss_param + SWFC_loss * self.SWFC_loss_param + CE_loss * self.CE_loss_param
 
             total_loss += loss.item()
-
-            total_HGR_loss += soft_HGR_loss.item()
+            if(len(self.modalities)>1):
+            # HGR loss is not needed for single modality since there is no fusion, hence no need for correlation maximization across fused features 
+                total_HGR_loss += soft_HGR_loss.item()
             total_SWFC_loss += SWFC_loss.item()
             total_CE_loss += CE_loss.item()
 
@@ -217,6 +220,7 @@ def get_args():
     parser.add_option('--weight_decay', dest = 'weight_decay', default = 0.00001, type = 'float', help = 'weight decay parameter')
     parser.add_option('--num_layers', dest = 'num_layers', default = 6, type = 'int', help = 'number of layers in MultiAttn')
     parser.add_option('--model_dim', dest = 'model_dim', default = 256, type = 'int', help = 'model dimension in MultiAttn')
+    # model dim is 256- used across model. 
     parser.add_option('--num_heads', dest = 'num_heads', default = 4, type = 'int', help = 'number of heads in MultiAttn')
     parser.add_option('--hidden_dim', dest = 'hidden_dim', default = 1024, type = 'int', help = 'hidden dimension in MultiAttn')
     parser.add_option('--dropout_rate', dest = 'dropout_rate', default = 0, type = 'float', help = 'dropout rate')
@@ -228,9 +232,12 @@ def get_args():
     parser.add_option('--HGR_loss_param', dest = 'HGR_loss_param', default = 0.3, type = 'float', help = 'coefficient of Soft-HGR loss')
     parser.add_option('--CE_loss_param', dest = 'CE_loss_param', default = 0.3, type = 'float', help = 'coefficient of Cross Entropy loss')
     parser.add_option('--multi_attn_flag', dest = 'multi_attn_flag', default = True, help = 'Multimodal fusion')
-
+    # adding support for modalities. 
+    parser.add_option( "--modalities", dest= 'modalities', default="atv", type='str', help="Modalities")
+    choices=["a", "t", "v", "at", "tv", "av", "atv"]
     (options, _) = parser.parse_args()
-
+    if options.modalities not in choices:   # if filename is not given
+        parser.error('Choice of moadlity is not avaliable. Please choose from "a", "t", "v", "at", "tv", "av", "atv"')
     return options
 
 
@@ -268,6 +275,7 @@ if __name__ == '__main__':
     HGR_loss_param = args.HGR_loss_param
     CE_loss_param = args.CE_loss_param
     multi_attn_flag = args.multi_attn_flag
+    modalities= args.modalities
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     seed = 2023 
@@ -276,7 +284,7 @@ if __name__ == '__main__':
     multiemo_train = TrainMultiEMO(dataset, batch_size, num_epochs, learning_rate, 
                                    weight_decay, num_layers, model_dim, num_heads, hidden_dim, 
                                    dropout_rate, dropout_rec,temp_param, focus_param, sample_weight_param, 
-                                   SWFC_loss_param, HGR_loss_param, CE_loss_param, multi_attn_flag, device)
+                                   SWFC_loss_param, HGR_loss_param, CE_loss_param, multi_attn_flag, device, modalities)
     multiemo_train.train_or_eval_linear_model()
 
         
